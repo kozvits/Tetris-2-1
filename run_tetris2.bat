@@ -1,5 +1,4 @@
 @echo off
-chcp 65001 >nul
 title Tetris 2 (ZX Spectrum Clone)
 
 echo ========================================
@@ -8,34 +7,34 @@ echo   Fuxoft Style
 echo ========================================
 echo.
 
-REM Проверка наличия Python
+REM Check if Python is installed
 python --version >nul 2>&1
 if %errorlevel% neq 0 (
-    echo ОШИБКА: Python не найден!
-    echo Пожалуйста, установите Python 3.x с https://www.python.org/
+    echo ERROR: Python not found!
+    echo Please install Python 3.x from https://www.python.org/
     echo.
     pause
     exit /b 1
 )
 
-REM Проверка наличия Pygame
+REM Check if Pygame is installed
 python -c "import pygame" >nul 2>&1
 if %errorlevel% neq 0 (
-    echo Установка зависимости Pygame...
+    echo Installing Pygame dependency...
     pip install pygame
     if %errorlevel% neq 0 (
-        echo ОШИБКА: Не удалось установить Pygame!
+        echo ERROR: Failed to install Pygame!
         pause
         exit /b 1
     )
 )
 
-echo Запуск игры...
+echo Starting game...
 echo.
 python tetris2.py
 
 if %errorlevel% neq 0 (
     echo.
-    echo Игра завершена с ошибкой.
+    echo Game exited with error.
     pause
 )

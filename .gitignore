@@ -1,23 +1,34 @@
-```
-# Environment
-.env
-.env.local
-*.env.*
-
-# Logs and temp files
-*.log
+*.bat.swp
 *.tmp
-*.swp
-
-# Editors
+*.log
 .vscode/
 .idea/
-
-# System files
+*.pyc
+__pycache__/
+node_modules/
+dist/
+build/
+target/
+*.o
+*.obj
+*.exe
+*.dll
+*.so
+*.a
+*.out
 .DS_Store
 Thumbs.db
-
-# Compressed files
+.env
+.env.local
+.env.*
+coverage/
+htmlcov/
+.coverage
+.mypy_cache/
+.pytest_cache/
+.gradle/
+julia-*/
+zig*/
 *.zip
 *.gz
 *.tar
@@ -40,34 +51,3 @@ Thumbs.db
 *.tar.bz2
 *.tar.xz
 *.tar.zst
-
-# Build artifacts
-*.o
-*.obj
-*.out
-*.exe
-*.dll
-*.so
-*.a
-*.class
-*.pyc
-
-# Dependencies
-node_modules/
-venv/
-.venv/
-__pycache__/
-.mypy_cache/
-.pytest_cache/
-dist/
-build/
-target/
-.gradle/
-julia-*/
-zig*/
-
-# Coverage
-coverage/
-htmlcov/
-.coverage
-```

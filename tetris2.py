@@ -25,6 +25,7 @@ import random
 import json
 import os
 import math
+import numpy as np
 
 # === КОНСТАНТЫ ===
 BLOCK_SIZE = 30  # Размер блока в пикселях
@@ -33,6 +34,9 @@ BOARD_HEIGHT = 20  # Высота поля в блоках
 SIDEBAR_WIDTH = 200  # Ширина боковой панели
 SCREEN_WIDTH = BOARD_WIDTH * BLOCK_SIZE + SIDEBAR_WIDTH
 SCREEN_HEIGHT = BOARD_HEIGHT * BLOCK_SIZE
+
+# Частота дискретизации для звука (как в ZX Spectrum)
+SAMPLE_RATE = 22050
 
 # Цвета в стиле ZX Spectrum (яркие, контрастные)
 COLORS = {
@@ -48,6 +52,127 @@ COLORS = {
     'gray': (128, 128, 128),    # Заблокированные блоки
     'dark_gray': (64, 64, 64),  # Сетка
 }
+
+# Ноты для синтеза музыки (частоты в Гц) - октавы 4, 5, 6
+NOTES = {
+    'C4': 261.63, 'C#4': 277.18, 'D4': 293.66, 'D#4': 311.13, 'E4': 329.63,
+    'F4': 349.23, 'F#4': 369.99, 'G4': 392.00, 'G#4': 415.30, 'A4': 440.00,
+    'A#4': 466.16, 'B4': 493.88,
+    'C5': 523.25, 'C#5': 554.37, 'D5': 587.33, 'D#5': 622.25, 'E5': 659.25,
+    'F5': 698.46, 'F#5': 739.99, 'G5': 783.99, 'G#5': 830.61, 'A5': 880.00,
+    'A#5': 932.33, 'B5': 987.77,
+    'C6': 1046.50,
+    None: 0  # Пауза
+}
+
+
+def generate_square_wave(freq, duration, volume=0.3):
+    """Генерирует квадратную волну (звук ZX Spectrum)"""
+    if freq == 0:
+        return np.zeros(int(SAMPLE_RATE * duration), dtype=np.int16)
+    
+    t = np.linspace(0, duration, int(SAMPLE_RATE * duration), False)
+    # Квадратная волна: sign(sin(2*pi*f*t))
+    wave = np.sign(np.sin(2 * np.pi * freq * t))
+    wave = (wave * volume * 32767).astype(np.int16)
+    return wave
+
+
+class MusicPlayer:
+    """Проигрыватель мелодий в стиле ZX Spectrum"""
+    
+    def __init__(self):
+        self.isPlaying = False
+        self.current_track = None
+        self.current_track_name = None
+        
+        # Мелодия A: Korobeiniki (классическая тема Tetris)
+        self.melody_a = [
+            ('E5', 0.5), ('B4', 0.5), ('C5', 0.5), ('D5', 0.5), ('C5', 0.5), ('B4', 0.5),
+            ('A4', 1.0), ('A4', 0.5), ('B4', 0.5), ('C5', 0.5), ('D5', 0.5), ('E5', 0.5),
+            ('C5', 0.5), ('A4', 0.5), ('A4', 1.0),
+            ('D5', 0.5), ('F5', 0.5), ('A5', 0.5), ('G5', 0.5), ('F5', 0.5), ('E5', 0.5),
+            ('D5', 0.5), ('C5', 0.5), ('B4', 0.5), ('C5', 0.5), ('D5', 0.5), ('E5', 0.5),
+            ('C5', 0.5), ('A4', 0.5), ('A4', 1.0),
+        ]
+        
+        # Мелодия B: В стиле Баха (Toccata and Fugue упрощённо)
+        self.melody_b = [
+            ('A4', 0.25), ('B4', 0.25), ('C5', 0.25), ('D5', 0.25), 
+            ('E5', 0.25), ('F5', 0.25), ('G5', 0.25), ('A5', 0.25),
+            ('A5', 0.25), ('G5', 0.25), ('F5', 0.25), ('E5', 0.25),
+            ('D5', 0.25), ('C5', 0.25), ('B4', 0.25), ('A4', 0.25),
+            ('E5', 0.25), ('F#5', 0.25), ('G5', 0.25), ('A5', 0.25),
+            ('B5', 0.25), ('C6', 0.25), ('B5', 0.25), ('A5', 0.25),
+            ('G5', 0.5), ('E5', 0.5), ('A4', 0.5), ('E5', 0.5),
+        ]
+        
+        # Мелодия C: Энергичная тема для высоких уровней
+        self.melody_c = [
+            ('C5', 0.25), ('E5', 0.25), ('G5', 0.25), ('C6', 0.25),
+            ('G5', 0.25), ('E5', 0.25), ('C5', 0.25), ('E5', 0.25),
+            ('F5', 0.25), ('A5', 0.25), ('C6', 0.25), ('F6', 0.25) if 'F6' in NOTES else ('F5', 0.25),
+            ('C6', 0.25), ('A5', 0.25), ('F5', 0.25), ('A5', 0.25),
+        ]
+        
+        self.tempo_a = 0.35  # Длительность четверти для мелодии A
+        self.tempo_b = 0.20  # Длительность для мелодии B (быстрее)
+        self.tempo_c = 0.18  # Длительность для мелодии C (ещё быстрее)
+
+    def play_track(self, track_name, loop=True):
+        """Воспроизвести трек по имени"""
+        if not hasattr(pygame.mixer, 'get_init') or not pygame.mixer.get_init():
+            return
+            
+        melody_map = {'A': self.melody_a, 'B': self.melody_b, 'C': self.melody_c}
+        tempo_map = {'A': self.tempo_a, 'B': self.tempo_b, 'C': self.tempo_c}
+        
+        melody = melody_map.get(track_name, self.melody_a)
+        tempo = tempo_map.get(track_name, self.tempo_a)
+        
+        # Генерируем весь трек заранее
+        samples = []
+        for note, duration in melody:
+            freq = NOTES.get(note, 0)
+            chunk = generate_square_wave(freq, duration * tempo, volume=0.12)
+            samples.append(chunk)
+            
+        full_track = np.concatenate(samples)
+        
+        # Создаем звук из массива numpy
+        sound = pygame.sndarray.make_sound(full_track)
+        sound.set_volume(0.25)
+        
+        if loop:
+            sound.play(-1)  # Бесконечный повтор
+        else:
+            sound.play()
+            
+        self.current_track = sound
+        self.current_track_name = track_name
+        self.isPlaying = True
+
+    def stop(self):
+        """Остановить воспроизведение"""
+        if self.current_track:
+            self.current_track.stop()
+        self.isPlaying = False
+        self.current_track = None
+
+    def update_music(self, level):
+        """Переключает музыку в зависимости от уровня"""
+        # Выбор мелодии по уровню: 0-4 -> A, 5-9 -> B, 10+ -> C
+        if level < 5:
+            track = 'A'
+        elif level < 10:
+            track = 'B'
+        else:
+            track = 'C'
+        
+        # Если играет другая мелодия или ничего не играет - запускаем нужную
+        if not self.isPlaying or self.current_track_name != track:
+            self.stop()
+            self.play_track(track)
 
 # Фигуры (тетрамино) - каждая фигура представлена как список координат относительно центра
 FIGURES = {
@@ -233,6 +358,7 @@ class Game:
         self.small_font = pygame.font.Font(None, 24)
         
         self.sound = SoundManager()
+        self.music = MusicPlayer()  # Добавляем проигрыватель музыки
         
         self.state = STATE_MENU
         self.board = Board()
@@ -288,6 +414,10 @@ class Game:
         self.next_figure = Figure()
         self.drop_timer = 0
         self.state = STATE_PLAYING
+        
+        # Запуск музыки
+        self.music.stop()
+        self.music.update_music(self.level)
     
     def spawn_figure(self):
         """Создать новую фигуру"""
@@ -399,6 +529,8 @@ class Game:
             if new_level > self.level:
                 self.level = new_level
                 self.drop_interval = self.get_drop_interval()
+                # Обновление музыки при смене уровня
+                self.music.update_music(self.level)
         
         # Создание новой фигуры
         self.spawn_figure()
@@ -442,19 +574,24 @@ class Game:
                     self.hard_drop()
                 elif event.key in (pygame.K_ESCAPE, pygame.K_p):
                     self.state = STATE_PAUSED
+                    self.music.stop()  # Остановить музыку на паузе
             
             elif self.state == STATE_PAUSED:
                 if event.key in (pygame.K_ESCAPE, pygame.K_p):
                     self.state = STATE_PLAYING
+                    self.music.update_music(self.level)  # Возобновить музыку
                 elif event.key == pygame.K_m:
                     self.state = STATE_MENU
+                    self.music.stop()
             
             elif self.state == STATE_GAME_OVER:
                 if event.key == pygame.K_RETURN:
                     self.new_game()
                 elif event.key == pygame.K_m:
                     self.state = STATE_MENU
+                    self.music.stop()
                 elif event.key == pygame.K_ESCAPE:
+                    self.music.stop()
                     return False
         
         return True

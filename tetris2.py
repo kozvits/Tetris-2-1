@@ -25,7 +25,15 @@ import random
 import json
 import os
 import math
-import numpy as np
+import sys
+
+# Попытка импортировать numpy для генерации звука
+try:
+    import numpy as np
+    HAS_NUMPY = True
+except ImportError:
+    HAS_NUMPY = False
+    print("Warning: numpy not found. Sound will be disabled. Install with: pip install numpy")
 
 # === КОНСТАНТЫ ===
 BLOCK_SIZE = 30  # Размер блока в пикселях
@@ -38,16 +46,20 @@ SCREEN_HEIGHT = BOARD_HEIGHT * BLOCK_SIZE
 # Частота дискретизации для звука (как в ZX Spectrum)
 SAMPLE_RATE = 22050
 
-# Цвета в стиле ZX Spectrum (яркие, контрастные)
-COLORS = {
-    'black': (0, 0, 0),
-    'white': (255, 255, 255),
-    'cyan': (0, 255, 255),      # I
-    'blue': (0, 0, 255),        # J
-    'orange': (255, 165, 0),    # L
-    'yellow': (255, 255, 0),    # O
-    'green': (0, 255, 0),       # S
-    'purple': (128, 0, 128),    # T
+# Ноты для совместимости (если используются где-то)
+NOTES = {
+    'C4': 261.63, 'C#4': 277.18, 'D4': 293.66, 'D#4': 311.13, 'E4': 329.63,
+    'F4': 349.23, 'F#4': 369.99, 'G4': 392.00, 'G#4': 415.30, 'A4': 440.00,
+    'A#4': 466.16, 'B4': 493.88,
+    'C5': 523.25, 'C#5': 554.37, 'D5': 587.33, 'D#5': 622.25, 'E5': 659.25,
+    'F5': 698.46, 'F#5': 739.99, 'G5': 783.99, 'G#5': 830.61, 'A5': 880.00,
+    'A#5': 932.33, 'B5': 987.77,
+    'C6': 1046.50,
+    None: 0
+}
+
+
+class SoundManager:
     'red': (255, 0, 0),         # Z
     'gray': (128, 128, 128),    # Заблокированные блоки
     'dark_gray': (64, 64, 64),  # Сетка
@@ -206,10 +218,12 @@ HIGHSCORE_FILE = "tetris2_highscore.json"
 
 
 class SoundManager:
-    """Простой менеджер звуков в стиле ZX Spectrum (синтетические звуки)"""
+    """Менеджер звуков и музыки в стиле ZX Spectrum (синтетические звуки)"""
     
     def __init__(self):
         self.enabled = True
+        self.music_playing = False
+        self.current_music_channel = None
         try:
             pygame.mixer.init(frequency=22050, size=-16, channels=2, buffer=512)
             self.initialized = True
@@ -217,45 +231,162 @@ class SoundManager:
             self.initialized = False
             self.enabled = False
     
-    def play_tone(self, frequency, duration_ms, volume=0.3):
-        """Воспроизвести простой тон (синусоида)"""
+    def generate_wave(self, frequency, duration_ms, volume=0.3, wave_type='square'):
+        """Генерация волны (square или sine) для ZX Spectrum стиля"""
+        if not HAS_NUMPY:
+            return None
+        
+        sample_rate = 22050
+        n_samples = int(sample_rate * duration_ms / 1000)
+        
+        if wave_type == 'square':
+            # Квадратная волна (более похожа на ZX Spectrum)
+            period = sample_rate / frequency
+            samples = np.zeros(n_samples, dtype=np.int16)
+            for i in range(n_samples):
+                if (i % period) < (period / 2):
+                    samples[i] = int(32767 * volume)
+                else:
+                    samples[i] = int(-32767 * volume)
+        else:
+            # Синусоида
+            t = np.linspace(0, duration_ms / 1000, n_samples)
+            samples = (np.sin(2 * np.pi * frequency * t) * 32767 * volume).astype(np.int16)
+        
+        # Конвертируем в стерео
+        stereo_samples = np.zeros((n_samples, 2), dtype=np.int16)
+        stereo_samples[:, 0] = samples
+        stereo_samples[:, 1] = samples
+        
+        return pygame.sndarray.make_sound(stereo_samples)
+    
+    def play_tone(self, frequency, duration_ms, volume=0.3, wave_type='square'):
+        """Воспроизвести простой тон"""
         if not self.enabled or not self.initialized:
             return
         
-        try:
-            sample_rate = 22050
-            n_samples = int(sample_rate * duration_ms / 1000)
-            buf = bytes([
-                int(127 + 127 * math.sin(2 * math.pi * frequency * t / sample_rate) * volume)
-                for t in range(n_samples)
-            ])
-            sound = pygame.mixer.Sound(buffer=buf)
-            sound.play()
-        except:
-            pass
+        if HAS_NUMPY:
+            try:
+                sound = self.generate_wave(frequency, duration_ms, volume, wave_type)
+                if sound:
+                    sound.play()
+            except Exception as e:
+                print(f"Sound error: {e}")
+        else:
+            # Fallback без numpy
+            try:
+                sample_rate = 22050
+                n_samples = int(sample_rate * duration_ms / 1000)
+                buf = bytes([
+                    int(127 + 127 * math.sin(2 * math.pi * frequency * t / sample_rate) * volume)
+                    for t in range(n_samples)
+                ])
+                sound = pygame.mixer.Sound(buffer=buf)
+                sound.play()
+            except:
+                pass
+    
+    def stop_music(self):
+        """Остановить музыку"""
+        if self.current_music_channel:
+            self.current_music_channel.stop()
+            self.current_music_channel = None
+        self.music_playing = False
+    
+    def play_music(self, level=1):
+        """Играть музыку в зависимости от уровня (в стиле Tetris 2)"""
+        if not self.enabled or not self.initialized or not HAS_NUMPY:
+            return
+        
+        self.stop_music()
+        
+        # Мелодии в стиле Tetris 2 (упрощённые версии классических тем)
+        # Уровень 1: медленная тема
+        # Уровень 2-5: средняя скорость
+        # Уровень 6+: быстрая тема
+        
+        tempo_map = {
+            1: 0.4,    # Медленно
+            2: 0.3,    # Средне
+            3: 0.25,
+            4: 0.2,
+            5: 0.18,
+            6: 0.15,   # Быстро
+            7: 0.13,
+            8: 0.12,
+            9: 0.11,
+            10: 0.1    # Очень быстро
+        }
+        
+        tempo = tempo_map.get(min(level, 10), 0.1)
+        
+        # Ноты (частоты) для мелодии в стиле коридорной темы
+        # Упрощённая версия знаменитой темы из Tetris
+        melody_notes = [
+            659, 587, 523, 494, 523, 587, 659, 587, 523, 494, 523, 587, 659, 784, 698, 659,
+            587, 523, 494, 523, 587, 659, 587, 523, 494, 523, 587, 659, 784, 698, 659,
+            784, 698, 659, 587, 523, 494, 523, 587, 659, 587, 523, 494, 523, 587, 659, 784, 698, 659,
+            587, 523, 494, 523, 587, 659, 587, 523, 494, 523, 587, 659, 784, 698, 659,
+        ]
+        
+        bass_notes = [
+            329, 329, 261, 261, 329, 329, 261, 261,
+            329, 329, 261, 261, 329, 329, 261, 261,
+            392, 392, 329, 329, 392, 392, 329, 329,
+            392, 392, 329, 329, 392, 392, 329, 329,
+        ]
+        
+        def play_melody():
+            channel = pygame.mixer.Channel(1)
+            note_duration = int(tempo * 1000)  # Длительность ноты в мс
+            
+            for i, note in enumerate(melody_notes):
+                if not self.music_playing:
+                    break
+                
+                bass_note = bass_notes[i % len(bass_notes)]
+                
+                # Мелодия
+                self.play_tone(note, note_duration * 0.8, 0.15, 'square')
+                # Бас
+                pygame.time.delay(int(note_duration * 0.1))
+                self.play_tone(bass_note, note_duration * 0.8, 0.1, 'square')
+                
+                pygame.time.delay(note_duration)
+            
+            # Зацикливаем
+            if self.music_playing:
+                play_melody()
+        
+        self.music_playing = True
+        # Запускаем музыку в отдельном потоке
+        import threading
+        music_thread = threading.Thread(target=play_melody, daemon=True)
+        music_thread.start()
     
     def play_move(self):
         """Звук перемещения фигуры"""
-        self.play_tone(440, 50, 0.1)
+        self.play_tone(440, 50, 0.1, 'square')
     
     def play_rotate(self):
         """Звук вращения фигуры"""
-        self.play_tone(660, 60, 0.15)
+        self.play_tone(660, 60, 0.15, 'square')
     
     def play_drop(self):
         """Звук приземления фигуры"""
-        self.play_tone(220, 100, 0.2)
+        self.play_tone(220, 100, 0.2, 'square')
     
     def play_clear_line(self):
         """Звук очистки линии"""
-        self.play_tone(880, 150, 0.3)
+        self.play_tone(880, 150, 0.3, 'square')
         pygame.time.delay(50)
-        self.play_tone(1100, 150, 0.3)
+        self.play_tone(1100, 150, 0.3, 'square')
     
     def play_game_over(self):
         """Звук конца игры"""
+        self.stop_music()
         for freq in [440, 392, 349, 294]:
-            self.play_tone(freq, 200, 0.3)
+            self.play_tone(freq, 200, 0.3, 'square')
             pygame.time.delay(150)
 
 
